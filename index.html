@@ -1,1 +1,272 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Traçabilité Solidaire ARDIE</title>
+<style>
+  :root{
+    --vert:#2e7d32; --vert-f:#1b5e20; --vert-clair:#e8f5e9; --texte:#222; --gris:#666;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:#f0f4f1; margin:0; padding:10px; color:var(--texte);
+  }
+  .card{
+    background:#fff; border-radius:16px; padding:16px;
+    box-shadow:0 4px 15px rgba(0,0,0,.08);
+    width:100%; max-width:480px; margin:10px auto;
+  }
+  .header{text-align:center; border-bottom:2px solid var(--vert-clair); padding-bottom:12px}
+  /* Le logo est optionnel : s'il est absent de GitHub, il ne s'affiche pas. */
+  .logo{display:none; max-height:80px; max-width:180px; margin:0 auto 8px; object-fit:contain}
+  .logo.ok{display:block}
+  .badge-live{
+    background:var(--vert-clair); color:var(--vert); font-size:10px; font-weight:700;
+    padding:4px 10px; border-radius:20px; display:inline-block; text-transform:uppercase;
+    letter-spacing:.3px;
+  }
+  h1{color:var(--vert-f); margin:10px 0 4px; font-size:22px; word-break:break-word}
+  .lot-id{color:var(--gris); font-size:12px; margin:0; word-break:break-all}
+  .grid-info{display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:15px 0}
+  .info-box{background:#fafafa; border-radius:10px; padding:10px 8px; border:1px solid #eee; text-align:center}
+  .info-label{font-size:10px; color:#777; text-transform:uppercase; margin:0; font-weight:600}
+  .info-val{font-size:14px; font-weight:700; color:var(--vert-f); margin:4px 0 0; word-break:break-word}
+  .section-title{
+    font-size:12px; font-weight:700; color:var(--vert); margin:20px 0 12px;
+    text-transform:uppercase; border-left:3px solid var(--vert); padding-left:6px;
+  }
+  .timeline{position:relative; padding-left:18px; border-left:2px solid #c8e6c9; margin-left:8px}
+  .step{position:relative; margin-bottom:15px}
+  .step::before{
+    content:""; position:absolute; left:-24px; top:2px; width:8px; height:8px;
+    background:var(--vert); border-radius:50%; border:2px solid #fff;
+    box-shadow:0 0 0 2px #c8e6c9;
+  }
+  .step-date{font-size:12px; color:var(--gris); font-weight:700}
+  .step-desc{font-size:14px; line-height:1.4; color:#111; margin:2px 0 0; font-weight:500; word-break:break-word}
+  .tag{
+    display:inline-block; font-size:10px; font-weight:700; text-transform:uppercase;
+    background:var(--vert-clair); color:var(--vert-f); border-radius:6px;
+    padding:1px 6px; margin-right:6px;
+  }
+  .footer{
+    text-align:center; margin-top:25px; padding-top:12px; border-top:1px solid #eee;
+    font-size:11px; color:var(--gris); line-height:1.4;
+  }
+  .footer-logo{font-weight:700; color:var(--vert-f); font-size:12px}
+  .attente{padding:30px 10px; text-align:center; color:var(--gris); font-size:14px; line-height:1.6}
+  .attente strong{color:var(--vert-f)}
+  @media (max-width:360px){
+    .grid-info{grid-template-columns:1fr}
+    h1{font-size:20px}
+  }
+</style>
+</head>
+<body>
+  <div class="card" id="carte">
+    <div class="attente">
+      <p><strong>Traçabilité ARDIE</strong></p>
+      <p>Chargement du lot…</p>
+      <noscript><p>Activez JavaScript, ou scannez le QR Code fourni sur l'étiquette du lot.</p></noscript>
+    </div>
+  </div>
 
+<script>
+(function () {
+  "use strict";
+
+  /* ================================================================ *
+   *  À PERSONNALISER (2 valeurs seulement)
+   * ================================================================ */
+
+  /* 1. URL de ton déploiement Apps Script (terminée par /exec)         */
+  var API = "https://script.google.com/macros/s/COLLER-ICI/exec";
+
+  /* 2. Nom du fichier logo déposé à la racine du dépôt.
+   *    Chemin relatif → fonctionne aussi sur un fork / un domaine.    */
+  var LOGO = "logo.png";
+
+  /* Délai maximum d'attente d'Apps Script avant de basculer sur le
+   * message d'indisponibilité (millisecondes).                        */
+  var DELAI_MAX = 12000;
+
+  /* ================================================================ *
+   *  Rien à modifier en dessous
+   * ================================================================ */
+
+  function esc(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+
+  function param(nom) {
+    var m = new RegExp("[?&]" + nom + "=([^&]*)").exec(window.location.search);
+    return m ? decodeURIComponent(m[1].replace(/\+/g, " ")).trim() : "";
+  }
+
+  function message(texte, avecTitre) {
+    document.getElementById("carte").innerHTML =
+      '<div class="attente">' +
+      (avecTitre ? '<p><strong>Traçabilité Solidaire ARDIE</strong></p>' : '') +
+      '<p>' + texte + '</p></div>';
+  }
+
+  var code = param("lot");
+  var carte = document.getElementById("carte");
+
+  /* Garde-fou : tant que l'URL Apps Script n'est pas renseignée,
+   * on le dit clairement au lieu d'afficher une page muette.        */
+  if (!API || API.indexOf("COLLER-ICI") !== -1) {
+    message("Configuration incomplète : l’adresse du script n’est pas renseignée.<br>" +
+            "<em>(variable API dans index.html)</em>", true);
+    return;
+  }
+
+  if (!code) {
+    message("Ce lien doit être ouvert en scannant le QR Code imprimé sur l’étiquette d’un lot.", true);
+    return;
+  }
+
+  /* --- Appel de l'API JSON (Apps Script) --------------------------- */
+  var fini = false;
+  var minuteur = setTimeout(function () {
+    if (fini) return;
+    fini = true;
+    message("La fiche de traçabilité ne répond pas pour le moment.<br>Merci de réessayer dans quelques instants.", true);
+  }, DELAI_MAX);
+
+  var url = API + (API.indexOf("?") === -1 ? "?" : "&") + "lot=" + encodeURIComponent(code);
+
+  /* Le JSONP évite tout blocage CORS/iframe : Apps Script renvoie
+   * un script qui appelle directement notre fonction.                */
+  var nomCb = "__ardieTrace_" + Date.now();
+  window[nomCb] = function (data) {
+    if (fini) return;
+    fini = true;
+    clearTimeout(minuteur);
+    try { afficher(data); } catch (err) { message("Fiche illisible : " + esc(err.message), true); }
+    try { delete window[nomCb]; } catch (e) { window[nomCb] = undefined; }
+  };
+
+  var s = document.createElement("script");
+  s.src = url + "&callback=" + nomCb;
+  s.onerror = function () {
+    if (fini) return;
+    fini = true;
+    clearTimeout(minuteur);
+    message("Impossible de joindre la fiche de traçabilité.<br>Vérifiez la connexion, puis scannez à nouveau.", true);
+  };
+  document.body.appendChild(s);
+
+  /* --- Rendu ------------------------------------------------------- */
+  function afficher(lot) {
+    if (!lot || lot.ok === false) {
+      message("Lot introuvable dans le registre ARDIE.", true);
+      return;
+    }
+
+    var estPepi = lot.atelier === "pepiniere";
+
+    var titreAtelier = estPepi
+      ? "PÉPINIÈRE SOCIALE ARDIE"
+      : "PLATEAU DE DIVERSIFICATION AGRICOLE (PDA)";
+    var sousTitreAtelier = estPepi
+      ? "Site CFPPA Forma'Terra — Saint-Benoît, La Réunion"
+      : "Atelier Chantier d'Insertion — La Réunion";
+
+    var labelSemis = estPepi ? "🌱 Date bouturage / semis" : "🌱 Date semis";
+    var labelPlant = estPepi ? "🪴 Rempoté le" : "🌿 Mis en terre";
+    var labelRecolte = estPepi ? "🧺 Sorti de pépinière le" : "🧺 Récolté le";
+    var labelEtapeFin = estPepi
+      ? "🧺 Lot prêt pour la vente & sortie pépinière"
+      : "🧺 Récolte finale effectuée";
+
+    var variete = lot.variete || (estPepi ? "Plante en culture" : "Production en cours");
+    var statut = lot.statut || "En cours";
+
+    var h = "";
+
+    /* --- En-tête --- */
+    h += '<div class="header">';
+    h += '<img class="logo" id="logoArdie" src="' + esc(LOGO) + '" alt="ARDIE">';
+    h += '<div class="badge-live">🟢 Traçabilité solidaire ARDIE</div>';
+    h += '<h1>' + esc(variete) + '</h1>';
+    h += '<p class="lot-id">Lot / Série : <strong>' + esc(lot.code || code) + '</strong></p>';
+    h += '</div>';
+
+    /* --- Bandeau d'information : on n'affiche que ce qui existe --- */
+    h += '<div class="grid-info">';
+    if (lot.site) {
+      h += '<div class="info-box"><p class="info-label">📍 Emplacement</p><p class="info-val">' + esc(lot.site) + '</p></div>';
+    }
+    h += '<div class="info-box"><p class="info-label">📊 Statut</p><p class="info-val">' + esc(statut) + '</p></div>';
+    if (lot.semis) {
+      h += '<div class="info-box"><p class="info-label">' + labelSemis + '</p><p class="info-val">' + esc(lot.semis) + '</p></div>';
+    }
+    if (lot.plantation) {
+      h += '<div class="info-box"><p class="info-label">' + labelPlant + '</p><p class="info-val">' + esc(lot.plantation) + '</p></div>';
+    }
+    if (lot.recolte) {
+      h += '<div class="info-box"><p class="info-label">' + labelRecolte + '</p><p class="info-val">' + esc(lot.recolte) + '</p></div>';
+    }
+    h += '</div>';
+
+    /* --- Timeline --- */
+    h += '<div class="section-title">🚜 Soins & travaux réalisés par l’équipe</div>';
+    h += '<div class="timeline">';
+
+    if (lot.semis) {
+      h += '<div class="step"><div class="step-date">' + esc(lot.semis) + '</div>' +
+           '<div class="step-desc">' + (estPepi
+              ? "🌱 Bouturage, semis & enracinement sous ombrière"
+              : "🌱 Mise en germination & soins pépinière") + '</div></div>';
+    }
+    if (lot.plantation) {
+      h += '<div class="step"><div class="step-date">' + esc(lot.plantation) + '</div>' +
+           '<div class="step-desc">' + (estPepi
+              ? "🪴 Rempotage & élevage en pot / conteneur"
+              : "🌿 Plantation & repiquage en pleine terre") + '</div></div>';
+    }
+
+    (lot.etapes || []).forEach(function (e) {
+      h += '<div class="step"><div class="step-date">' + esc(e.date) + '</div>' +
+           '<div class="step-desc">' +
+           (e.action ? '<span class="tag">' + esc(e.action) + '</span>' : '') +
+           esc(e.texte) + '</div></div>';
+    });
+
+    if (lot.recolte) {
+      h += '<div class="step"><div class="step-date">' + esc(lot.recolte) + '</div>' +
+           '<div class="step-desc">' + labelEtapeFin + '</div></div>';
+    }
+
+    if (!lot.semis && !lot.plantation && !lot.recolte && (!lot.etapes || !lot.etapes.length)) {
+      h += '<div class="step"><div class="step-desc">Aucune intervention enregistrée pour l’instant — ' +
+           'le lot vient d’être créé.</div></div>';
+    }
+    h += '</div>';
+
+    /* --- Pied --- */
+    h += '<div class="footer">';
+    h += '<div class="footer-logo">' + esc(titreAtelier) + '</div>' + esc(sousTitreAtelier);
+    h += '<br><em>Ce projet agricole &amp; solidaire accompagne l’insertion socioprofessionnelle.</em>';
+    h += '</div>';
+
+    carte.innerHTML = h;
+    document.title = variete + " — Traçabilité ARDIE";
+
+    /* Le logo n'est affiché que s'il se charge vraiment. */
+    var img = document.getElementById("logoArdie");
+    if (img) {
+      img.onload = function () { if (img.naturalWidth > 0) img.className = "logo ok"; };
+      img.onerror = function () { img.style.display = "none"; };
+    }
+  }
+})();
+</script>
+<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a5f7f2609aac73be',t:'MTc5NTUxODQxMg=='};var l=window.parent.location,o;try{o=new URL(l.origin).origin}catch(e){try{o=new URL(new URL(l.href).origin).origin}catch(e){o=''}}var u='/cdn-cgi/challenge-platform/scripts/jsd/main.js?ray=a5f7f2609aac73be',a=document.createElement('script');a.src=o?new URL(u,o).href:u;document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
