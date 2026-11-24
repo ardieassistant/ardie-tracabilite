@@ -118,11 +118,10 @@
   var code = param("lot");
   var carte = document.getElementById("carte");
 
-  /* Garde-fou : tant que l'URL Apps Script n'est pas renseignée,
-   * on le dit clairement au lieu d'afficher une page muette.        */
-  if (!API || API.indexOf("COLLER-ICI") !== -1) {
-    message("Configuration incomplète : l’adresse du script n’est pas renseignée.<br>" +
-            "<em>(variable API dans index.html)</em>", true);
+  /* Garde-fou : l'URL du script doit être renseignée et se terminer par /exec */
+  if (!API || !/^https:\/\/script\.google\.com\/macros\/s\/[^\/]+\/exec/.test(API)) {
+    message("Configuration incomplète : l’adresse du script est absente ou incorrecte.<br>" +
+            "<em>Elle doit ressembler à https://script.google.com/macros/s/…/exec</em>", true);
     return;
   }
 
@@ -131,36 +130,38 @@
     return;
   }
 
-  /* --- Appel de l'API JSON (Apps Script) --------------------------- */
-  var fini = false;
-  var minuteur = setTimeout(function () {
-    if (fini) return;
-    fini = true;
-    message("La fiche de traçabilité ne répond pas pour le moment.<br>Merci de réessayer dans quelques instants.", true);
-  }, DELAI_MAX);
+  /* --- Appel de l'API JSON (Apps Script) --------------------------- *
+   * Apps Script renvoie du JSON avec Access-Control-Allow-Origin: *,
+   * donc un fetch() classique fonctionne, y compris depuis une iframe.
+   * Coalesce() évite les requêtes simultanées de deux onglets/pages.  */
+  var controleur = (typeof AbortController !== "undefined") ? new AbortController() : null;
+  var minuteur = setTimeout(function () { if (controleur) controleur.abort(); }, DELAI_MAX);
 
   var url = API + (API.indexOf("?") === -1 ? "?" : "&") + "lot=" + encodeURIComponent(code);
 
-  /* Le JSONP évite tout blocage CORS/iframe : Apps Script renvoie
-   * un script qui appelle directement notre fonction.                */
-  var nomCb = "__ardieTrace_" + Date.now();
-  window[nomCb] = function (data) {
-    if (fini) return;
-    fini = true;
-    clearTimeout(minuteur);
-    try { afficher(data); } catch (err) { message("Fiche illisible : " + esc(err.message), true); }
-    try { delete window[nomCb]; } catch (e) { window[nomCb] = undefined; }
-  };
-
-  var s = document.createElement("script");
-  s.src = url + "&callback=" + nomCb;
-  s.onerror = function () {
-    if (fini) return;
-    fini = true;
-    clearTimeout(minuteur);
-    message("Impossible de joindre la fiche de traçabilité.<br>Vérifiez la connexion, puis scannez à nouveau.", true);
-  };
-  document.body.appendChild(s);
+  fetch(url, controleur ? { signal: controleur.signal } : {})
+    .then(function (r) {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.text();
+    })
+    .then(function (txt) {
+      var data;
+      try { data = JSON.parse(txt); }
+      catch (e) {
+        throw new Error("réponse inattendue du script (HTML au lieu de JSON) — " +
+                        "vérifiez que le déploiement Apps Script est bien la version JSON");
+      }
+      afficher(data);
+    })
+    .catch(function (err) {
+      if (err && err.name === "AbortError") {
+        message("La fiche de traçabilité ne répond pas pour le moment.<br>Merci de réessayer dans quelques instants.", true);
+      } else {
+        message("Impossible de joindre la fiche de traçabilité.<br><small>" +
+                esc(err.message || String(err)) + "</small>", true);
+      }
+    })
+    .then(function () { clearTimeout(minuteur); });
 
   /* --- Rendu ------------------------------------------------------- */
   function afficher(lot) {
@@ -268,5 +269,5 @@
   }
 })();
 </script>
-<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a5f821fe8f724eb9',t:'MTc5NTUyMDM2Mw=='};var l=window.parent.location,o;try{o=new URL(l.origin).origin}catch(e){try{o=new URL(new URL(l.href).origin).origin}catch(e){o=''}}var u='/cdn-cgi/challenge-platform/scripts/jsd/main.js?ray=a5f821fe8f724eb9',a=document.createElement('script');a.src=o?new URL(u,o).href:u;document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a5f826f84d004eb9',t:'MTc5NTUyMDU2Nw=='};var l=window.parent.location,o;try{o=new URL(l.origin).origin}catch(e){try{o=new URL(new URL(l.href).origin).origin}catch(e){o=''}}var u='/cdn-cgi/challenge-platform/scripts/jsd/main.js?ray=a5f826f84d004eb9',a=document.createElement('script');a.src=o?new URL(u,o).href:u;document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
